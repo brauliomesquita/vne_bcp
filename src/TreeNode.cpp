@@ -54,6 +54,8 @@ void TreeNode::createObjFunction()
 		obj += (*var)->getCoef() * var_;
 	}
 
+	obj += requests.size() * 10000;
+
 	objective.setExpr(obj);
 	obj.end();
 }
@@ -165,8 +167,52 @@ void TreeNode::createConstraints()
 		expr.end();
 	}
 
+	// Bandwidth Capacity
+	for(int e=0; e<substrate->getM(); e++){
+		IloExpr expr(env);
+		auto physEdge = substrate->getEdges()[e]; 
 
+		for(int v = 0; v < requests.size(); v++){
+			for(int k = 0; k < requests[v]->getGraph()->getM(); k++){
+				//auto vNode = requests[v]->getGraph()->getNodes()[k];
 
+				/*var->setLambdaVar(requests[v], vNode, physEdge);
+
+				auto vIt = vars.find(var);
+				auto varIndex = (*vIt)->index;
+				expr += vNode->getCPU() * variables_[varIndex];*/
+			}
+		}
+
+		constraints_.add(expr <= physEdge->getBW());
+		expr.end();
+	}
+
+	// Path Assignment
+	for(int v = 0; v < requests.size(); v++){
+		var->setReqAccVar(requests[v]);
+		
+		auto vIt = vars.find(var);
+		auto varIndex = (*vIt)->index;
+		auto yVar = variables_[varIndex];
+
+		for(int k = 0; k < requests[v]->getGraph()->getM(); k++){
+			IloExpr expr(env);
+
+			for(int e=0; e<substrate->getM(); e++){	
+				//auto vNode = requests[v]->getGraph()->getNodes()[k];
+
+				/*var->setLambdaVar(requests[v], vNode, physEdge);
+
+				auto vIt = vars.find(var);
+				auto varIndex = (*vIt)->index;
+				expr += vNode->getCPU() * variables_[varIndex];*/
+			}
+
+			constraints_.add(expr - yVar == 0);
+			expr.end();
+		}
+	}
 
 }
 
@@ -197,12 +243,12 @@ void TreeNode::getDuals()
 
 float TreeNode::Solve()
 {
-	cout << "Num Vars: " << vars.size() << endl;
-	cout << "Const Vars: " << consts.size() << endl;
-
 	const clock_t begin_time = clock();
 	createModel();
 	std::cout << "Model built in " << float( clock () - begin_time ) /  CLOCKS_PER_SEC << " seconds." << endl;
+
+	cout << "Num Vars: " << vars.size() << endl;
+	cout << "Const Vars: " << consts.size() << endl;
 
 	problem->exportModel("modeloMatematico.lp");
 
