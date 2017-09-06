@@ -21,14 +21,18 @@ class Constraint
     Edge * virtualEdge;
     Edge * physEdge;
 
+    int index;
+
 public:
     enum ConstType {
         UNKNOWN = 0,
         REQ_ACC,
-        CPU_CAPACITY,
         NODE_MAP,
+        CPU_CAPACITY,
         BANDWIDTH_CAPACITY,
-        FLOW
+        PATH_ASSIGN,
+        PATH_INITNODE,
+        PATH_ENDNODE
     };
 
     ConstType type;
@@ -42,6 +46,9 @@ public:
     IloRange getConstraint();
     ConstType getType();
     
+    int getIndex();    
+    void setIndex(int value);
+
     // Setters
     void setUb(double value);
     void setLb(double value);
@@ -49,9 +56,11 @@ public:
     // Operators
     bool operator < (const Constraint& other) const;
 
-    void setReqAccConst(Request * request);
+    void setReqAccConst(Request * request, Node * pNode);
     void setCpuCapacityConst(Node * physicalNode);
+    void setBWCapacityConst(Edge * physicalEdge);
     void setNodeMapConst(Request * request, Node * virtualNode);
+    void setPathAssignConst(Request * request, Edge * virtualEdge);
 
     struct ConstraintComp {
         bool operator() (const Constraint* lhs, const Constraint* rhs) const

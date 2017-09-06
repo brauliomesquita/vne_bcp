@@ -20,10 +20,9 @@ class Variable
 
     Edge * virtualEdge;
     int pathId;
-
-public:
     int index;
 
+public:
     enum VarType {
         UNKNOWN = 0,
         REQ_ACC,
@@ -46,6 +45,9 @@ public:
     Request * getRequest();
     Node * getPhysNode();
     Node * getVirtualNode();
+
+    int getIndex();
+    void setIndex(int value);
 
     // Setters
     void setCoef(double value);

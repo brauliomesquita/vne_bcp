@@ -48,7 +48,7 @@ void TreeNode::createObjFunction()
 	IloExpr obj(env);
 
 	for(auto var = vars.begin(); var != vars.end(); var++){
-		auto varIndex = (*var)->index;
+		auto varIndex = (*var)->getIndex();
 		auto var_ = variables_[varIndex];
 
 		obj += (*var)->getCoef() * var_;
@@ -94,7 +94,7 @@ void TreeNode::createVariables()
 void TreeNode::createConstraints()
 {
 	constraints_ = IloRangeArray(env);
-
+	auto constCount = 0;
 	auto var = new Variable();
 
 	// If a VN is accepted, then all of its virtual nodes must be mapped onto a physical node
@@ -102,7 +102,7 @@ void TreeNode::createConstraints()
 		var->setReqAccVar(requests[v]);
 
 		auto vIt = vars.find(var);
-		auto varIndex = (*vIt)->index;
+		auto varIndex = (*vIt)->getIndex();
 		auto yVar = variables_[varIndex];
 
 		for(int k = 0; k < requests[v]->getGraph()->getN(); k++){
@@ -115,9 +115,16 @@ void TreeNode::createConstraints()
 				var->setNodeMapVar(requests[v], vNode, physNode);
 
 				vIt = vars.find(var);
-				varIndex = (*vIt)->index;
+				if(vIt == vars.end())
+					continue;
+				varIndex = (*vIt)->getIndex();
 				expr += variables_[varIndex];
 			}
+			
+			auto constraint_ = new Constraint();
+			constraint_->setReqAccConst(requests[v], vNode);
+			constraint_->setIndex(constCount++);
+			consts.insert(constraint_);
 
 			constraints_.add(expr - yVar == 0);
 			expr.end();
@@ -137,10 +144,17 @@ void TreeNode::createConstraints()
 				var->setNodeMapVar(requests[v], vNode, physNode);
 
 				auto vIt = vars.find(var);
-				auto varIndex = (*vIt)->index;
+				if(vIt == vars.end())
+					continue;
+				auto varIndex = (*vIt)->getIndex();
 				expr += variables_[varIndex];
 			}
 		
+			auto constraint_ = new Constraint();
+			constraint_->setNodeMapConst(requests[v], physNode);
+			constraint_->setIndex(constCount++);
+			consts.insert(constraint_);
+
 			constraints_.add(expr <= 1);
 			expr.end();
 		}
@@ -158,10 +172,17 @@ void TreeNode::createConstraints()
 				var->setNodeMapVar(requests[v], vNode, physNode);
 
 				auto vIt = vars.find(var);
-				auto varIndex = (*vIt)->index;
+				if(vIt == vars.end())
+					continue;
+				auto varIndex = (*vIt)->getIndex();
 				expr += vNode->getCPU() * variables_[varIndex];
 			}
 		}
+
+		auto constraint_ = new Constraint();
+		constraint_->setCpuCapacityConst(physNode);
+		constraint_->setIndex(constCount++);
+		consts.insert(constraint_);
 
 		constraints_.add(expr <= physNode->getCPU());
 		expr.end();
@@ -172,17 +193,10 @@ void TreeNode::createConstraints()
 		IloExpr expr(env);
 		auto physEdge = substrate->getEdges()[e]; 
 
-		for(int v = 0; v < requests.size(); v++){
-			for(int k = 0; k < requests[v]->getGraph()->getM(); k++){
-				//auto vNode = requests[v]->getGraph()->getNodes()[k];
-
-				/*var->setLambdaVar(requests[v], vNode, physEdge);
-
-				auto vIt = vars.find(var);
-				auto varIndex = (*vIt)->index;
-				expr += vNode->getCPU() * variables_[varIndex];*/
-			}
-		}
+		auto constraint_ = new Constraint();
+		constraint_->setBWCapacityConst(physEdge);
+		constraint_->setIndex(constCount++);
+		consts.insert(constraint_);
 
 		constraints_.add(expr <= physEdge->getBW());
 		expr.end();
@@ -193,35 +207,42 @@ void TreeNode::createConstraints()
 		var->setReqAccVar(requests[v]);
 		
 		auto vIt = vars.find(var);
-		auto varIndex = (*vIt)->index;
+		auto varIndex = (*vIt)->getIndex();
 		auto yVar = variables_[varIndex];
 
 		for(int k = 0; k < requests[v]->getGraph()->getM(); k++){
 			IloExpr expr(env);
+			auto vEdge = requests[v]->getGraph()->getEdges()[k];
 
-			for(int e=0; e<substrate->getM(); e++){	
-				//auto vNode = requests[v]->getGraph()->getNodes()[k];
-
-				/*var->setLambdaVar(requests[v], vNode, physEdge);
-
-				auto vIt = vars.find(var);
-				auto varIndex = (*vIt)->index;
-				expr += vNode->getCPU() * variables_[varIndex];*/
-			}
+			auto constraint_ = new Constraint();
+			constraint_->setPathAssignConst(requests[v], vEdge);
+			constraint_->setIndex(constCount++);
+			consts.insert(constraint_);
 
 			constraints_.add(expr - yVar == 0);
 			expr.end();
 		}
 	}
 
+	for(auto var = vars.begin(); var != vars.end(); var++){
+		if((*var)->getType() != Variable::VarType::LAMBDA)
+			continue;
+
+		auto varIndex = (*var)->getIndex();
+
+		//(*var)->getIndex() = variables_.getSize();
+	}
+
 }
 
 void TreeNode::buildModel(){
 
+	auto countVars = 0;
+
 	for(auto var = vars.begin(); var != vars.end(); var++){
 		auto var_ = IloNumVar(env, (*var)->getLb(), (*var)->getUb(), (*var)->getName());
 		
-		(*var)->index = variables_.getSize();
+		(*var)->setIndex(countVars++);
 		variables_.add(var_);
 	}
 
@@ -258,16 +279,85 @@ float TreeNode::Solve()
 
 		IloNumArray duals_(env, constraints_.getSize());
 		problem->getDuals(duals_, constraints_);
-		
+	
+		Pricing(duals_);
+
 		break;
 	}
 
 	cout << "Objective Function Value: " << problem->getObjValue() << endl;
 
-	for(int i=0; i<variables_.getSize(); i++){
+	/*for(int i=0; i<variables_.getSize(); i++){
 		if(problem->getValue(variables_[i]) > 0.001)
 			cout << variables_[i].getName() << "\t" << problem->getValue(variables_[i]) << endl;
-	}
+	}*/
 
 	return 1.0;
+}
+
+void TreeNode::Pricing(IloNumArray duals_){
+	cout << "********************************************" << endl;
+	cout << "Entering Pricing Function" << endl;
+	IloEnv pEnv;
+	IloModel pModel(pEnv);
+	IloCplex pProblem(pEnv);
+
+	IloObjective objective = IloAdd(pModel, IloMinimize(pEnv));
+	
+	auto constraint_ = new Constraint();
+	char varName[32];
+
+	IloIntVarArray O_(pEnv);
+	IloIntVarArray D_(pEnv);
+
+	for(int i = 0; i < substrate->getN(); i++){
+		sprintf(varName, "O_%d", i);
+		IloIntVar o(pEnv, 0, 1, varName);
+		O_.add(o);
+
+		sprintf(varName, "D_%d", i);
+		IloIntVar d(pEnv, 0, 1, varName);
+		D_.add(d);
+	}
+	
+	pModel.add(O_);
+	pModel.add(D_);
+
+	IloExpr obj(pEnv);
+	for(int e = 0; e < substrate->getM(); e++){
+	}
+	objective.setExpr(obj);
+
+	IloExpr exprO(pEnv);
+	for(int i = 0; i < substrate->getN(); i++){
+		exprO += O_[i];
+	}
+	pModel.add(exprO == 1);
+
+	IloExpr exprD(pEnv);
+	for(int i = 0; i < substrate->getN(); i++){
+		exprD += D_[i];
+	}
+	pModel.add(exprD == 1);
+
+	
+
+	pProblem.extract(pModel);
+
+	pProblem.solve();
+
+	int value;
+	for(int i = 0; i < substrate->getN(); i++){
+		value = pProblem.getIntValue(O_[i]);
+		if(value == 1)
+			cout << O_[i] << "\t" << value << endl;
+
+		value = pProblem.getIntValue(D_[i]);
+		if(value == 1)
+			cout << D_[i] << "\t" << value << endl;
+	}
+
+
+	pProblem.exportModel("Pricing.lp");
+	cout << "********************************************" << endl;
 }

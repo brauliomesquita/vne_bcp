@@ -46,6 +46,8 @@ public:
 	void createObjFunction();
 	void getDuals();
 	void addToModel();
+
+	void Pricing(IloNumArray duals_);
 };
 
 #endif

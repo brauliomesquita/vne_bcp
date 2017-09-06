@@ -4,6 +4,7 @@
 #include <list>
 #include <map>
 
+#include "Request.h"
 #include "Edge.h"
 
 class Paths

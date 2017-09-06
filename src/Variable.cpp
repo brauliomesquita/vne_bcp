@@ -43,6 +43,15 @@ void Variable::setNodeMapVar(Request * request, Node * virtualNode, Node * physi
     this->physNode = physicalNode;
 }
 
+int Variable::getIndex(){
+    return index;
+}
+
+void Variable::setIndex(int value){
+    this->index = value;
+}
+
+
 Node * Variable::getVirtualNode(){
     return this->virtualNode;
 }

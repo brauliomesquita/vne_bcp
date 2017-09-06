@@ -31,7 +31,7 @@ CCC = g++
 # Compiler options
 # ---------------------------------------------------------------------
 
-CCOPT = -m64 -O3 -fPIC -fno-strict-aliasing -fexceptions -g -DIL_STD -std=c++11 -w
+CCOPT = -m64 -O3 -fPIC -fno-strict-aliasing -fexceptions -DIL_STD -std=c++11 -w
 
 # ---------------------------------------------------------------------
 # Link options and libraries
