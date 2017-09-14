@@ -41,10 +41,13 @@ public:
     double getLb();
     double getValue();
     VarType getType();
+    int getPathId();
     
     Request * getRequest();
     Node * getPhysNode();
     Node * getVirtualNode();
+
+    Edge * getVirtualEdge();
 
     int getIndex();
     void setIndex(int value);

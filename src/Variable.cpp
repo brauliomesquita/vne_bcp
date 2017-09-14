@@ -103,6 +103,8 @@ char const* Variable::getName(){
         sprintf(varName, "y_%d", this->request->getId());
     } else if(this->type == VarType::NODE_MAP){
         sprintf(varName, "z_%d_%d_%d", this->request->getId(), this->virtualNode->getId(), this->physNode->getId());
+    } else if(this->type == VarType::LAMBDA){
+        sprintf(varName, "lambda_%d_%d_%d", this->request->getId(), this->virtualEdge->getId(), this->pathId);
     }
     return varName;
 }
@@ -139,4 +141,12 @@ bool Variable::operator < (const Variable& other) const
 
 Request* Variable::getRequest(){
     return this->request;
+}
+
+int Variable::getPathId(){
+    return this->pathId;
+}
+
+Edge * Variable::getVirtualEdge(){
+    return this->virtualEdge;
 }

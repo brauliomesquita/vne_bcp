@@ -27,7 +27,8 @@ class TreeNode {
 
 	IloModel model;
 	IloCplex * problem;
-
+	IloObjective objective;
+	
 	IloNumVarArray variables_;
 	IloRangeArray constraints_;
 
@@ -47,7 +48,9 @@ public:
 	void getDuals();
 	void addToModel();
 
-	void Pricing(IloNumArray duals_);
+	void Pricing(IloNumArray duals_, std::list<Variable*> * newVars);
+	void addLambdaVariables(std::list<Variable*> newVariables);
+	
 };
 
 #endif

@@ -86,6 +86,10 @@ bool Constraint::operator < (const Constraint& other) const
         return (this->physNode->getId()) < (other.physNode->getId());
     }
 
+    if(this->type == ConstType::BANDWIDTH_CAPACITY){
+        return (this->physEdge->getId()) < (other.physEdge->getId());
+    }
+
     if(this->type == ConstType::NODE_MAP){
          if(this->request->getId() != other.request->getId())
              return this->request->getId() < other.request->getId();

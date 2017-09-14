@@ -42,7 +42,6 @@ void TreeNode::createModel(){
 
 void TreeNode::createObjFunction()
 {
-	IloObjective objective(env);
 	objective = IloAdd(model, IloMinimize(env));
 	
 	IloExpr obj(env);
@@ -262,8 +261,56 @@ void TreeNode::getDuals()
 	}
 }
 
+void TreeNode::addLambdaVariables(std::list<Variable*> newVariables){
+	cout << "Adding Lambda Variables to the Model" << endl;
+
+	auto countVars = variables_.getSize();
+	auto constraint_ = new Constraint();
+
+	for (auto var = newVariables.begin(); var != newVariables.end(); var++){
+		auto virtualEdge = (*var)->getVirtualEdge();
+		auto var_ = IloNumVar(env, (*var)->getLb(), (*var)->getUb(), (*var)->getName());
+		(*var)->setIndex(countVars++);
+
+		model.add(var_);
+
+		// Path Assignment Constraint
+		constraint_->setPathAssignConst((*var)->getRequest(), virtualEdge);
+		auto cIt = consts.find(constraint_);
+
+		if(cIt != consts.end()){
+			int index = (*cIt)->getIndex();
+			constraints_[index].setLinearCoef(var_, 1);
+		}
+
+		// Bandwidth Capacity Constraint
+		int pathId = (*var)->getPathId();
+		auto path = paths->getPath(pathId);
+
+		cout << "Path " << pathId << "\t" << path.size() << " physical edges." << endl;
+
+		auto objCoef = 0.0;
+
+		for (auto physEdge = path.begin(); physEdge != path.end(); physEdge++){
+			objCoef += (*physEdge)->getBW();
+
+			constraint_->setBWCapacityConst(*physEdge);
+			cIt = consts.find(constraint_);
+
+			if(cIt != consts.end()){
+				int index = (*cIt)->getIndex();
+				constraints_[index].setLinearCoef(var_, virtualEdge->getBW());
+			}
+		}
+
+		objective.setLinearCoef(var_, objCoef);
+
+	}		
+}
+
 float TreeNode::Solve()
 {
+	auto newVariables = std::list<Variable*>();
 	const clock_t begin_time = clock();
 	createModel();
 	std::cout << "Model built in " << float( clock () - begin_time ) /  CLOCKS_PER_SEC << " seconds." << endl;
@@ -280,10 +327,19 @@ float TreeNode::Solve()
 		IloNumArray duals_(env, constraints_.getSize());
 		problem->getDuals(duals_, constraints_);
 	
-		Pricing(duals_);
+		Pricing(duals_, &newVariables);
+		cout << "Number of Variables to add to the model:\t" << newVariables.size() << endl;
+
+		addLambdaVariables(newVariables);
 
 		break;
 	}
+
+	//problem->extract(model);
+	problem->exportModel("completeModel.lp");
+
+	if(!problem->solve())
+		return 0.0;
 
 	cout << "Objective Function Value: " << problem->getObjValue() << endl;
 
@@ -295,18 +351,21 @@ float TreeNode::Solve()
 	return 1.0;
 }
 
-void TreeNode::Pricing(IloNumArray duals_){
+void TreeNode::Pricing(IloNumArray duals_, std::list<Variable*> * newVars){
 	cout << "********************************************" << endl;
 	cout << "Entering Pricing Function" << endl;
 	IloEnv pEnv;
 	IloModel pModel(pEnv);
 	IloCplex pProblem(pEnv);
 
-	IloObjective objective = IloAdd(pModel, IloMinimize(pEnv));
+	newVars->clear();
+
+	IloObjective pObjective = IloAdd(pModel, IloMinimize(pEnv));
 	
 	auto constraint_ = new Constraint();
 	char varName[32];
 
+	// Assign Variables
 	IloIntVarArray O_(pEnv);
 	IloIntVarArray D_(pEnv);
 
@@ -323,40 +382,182 @@ void TreeNode::Pricing(IloNumArray duals_){
 	pModel.add(O_);
 	pModel.add(D_);
 
-	IloExpr obj(pEnv);
-	for(int e = 0; e < substrate->getM(); e++){
-	}
-	objective.setExpr(obj);
-
-	IloExpr exprO(pEnv);
+	// Flow Variables
+	IloArray<IloIntVarArray> X_(pEnv, substrate->getN());
 	for(int i = 0; i < substrate->getN(); i++){
-		exprO += O_[i];
+		X_[i] = IloIntVarArray(pEnv, substrate->getN());
 	}
-	pModel.add(exprO == 1);
 
-	IloExpr exprD(pEnv);
 	for(int i = 0; i < substrate->getN(); i++){
-		exprD += D_[i];
-	}
-	pModel.add(exprD == 1);
+		for(int j = 0; j < substrate->getN(); j++){
 
+			int edgeId = substrate->getAdj(i, j);
+			if(edgeId == -1)
+				continue;
+
+				auto edge = substrate->getEdges()[edgeId];
+			
+			sprintf(varName, "X_%d_%d", i, j);
+			X_[i][j] = IloIntVar(pEnv, 0, 1, varName);
+
+			sprintf(varName, "X_%d_%d", j, i);
+			X_[j][i] = IloIntVar(pEnv, 0, 1, varName);
+		}
+	}
+
+	for(int i = 0; i < substrate->getN(); i++){
+		pModel.add(X_[i]);
+	}
+
+	// Assign Constraints
+	IloExpr orig(pEnv);
+	for(int i = 0; i < substrate->getN(); i++){
+		orig += O_[i];
+	}
+	pModel.add(orig == 1);
+
+	IloExpr dest(pEnv);
+	for(int i = 0; i < substrate->getN(); i++){
+		dest += D_[i];
+	}
+	pModel.add(dest == 1);
+
+	for(int i = 0; i < substrate->getN(); i++){
+		pModel.add(O_[i] + D_[i] <= 1);
+	}
 	
 
-	pProblem.extract(pModel);
-
-	pProblem.solve();
-
-	int value;
+	// Flow Constraints
 	for(int i = 0; i < substrate->getN(); i++){
-		value = pProblem.getIntValue(O_[i]);
-		if(value == 1)
-			cout << O_[i] << "\t" << value << endl;
+		IloExpr flow(pEnv);
+		
+		for(int j = 0; j < substrate->getN(); j++){
+			if(substrate->getAdj(i, j) != -1){
+				flow +=  X_[i][j];
+				flow += -X_[j][i];
+			}
+		}
 
-		value = pProblem.getIntValue(D_[i]);
-		if(value == 1)
-			cout << D_[i] << "\t" << value << endl;
+		pModel.add(flow - O_[i] + D_[i] == 0);
+
 	}
 
+	IloExpr edgeObjExpr(pEnv);
+	for(int e=0; e<substrate->getM(); e++){
+		auto physEdge = substrate->getEdges()[e];
+		int i = physEdge->getOrig();
+		int j = physEdge->getDest();
+
+		auto constraint_ = new Constraint();
+		constraint_->setBWCapacityConst(physEdge);
+
+		auto cIt = consts.find(constraint_);
+		if(cIt == consts.end()){
+			cout << "PUTA QUE PARIU!" << endl;
+		}
+
+		int cIndex = (*cIt)->getIndex();
+
+		edgeObjExpr += - duals_[cIndex] * physEdge->getBW() * X_[i][j];
+		edgeObjExpr += - duals_[cIndex] * physEdge->getBW() * X_[j][i];
+	}
+
+
+	// Foreach network
+	// Foreach demand
+	for(int v=0; v<requests.size(); v++){
+		auto request = requests[v];
+
+		for(int e=0; e<request->getGraph()->getM(); e++){
+			auto edge = request->getGraph()->getEdges()[e];
+
+			for(int i = 0; i < substrate->getN(); i++){
+				O_[i].setUb(0);
+				D_[i].setUb(0);
+			}
+
+			int i = edge->getOrig();
+			int j = edge->getDest();
+
+			auto orig = request->getGraph()->getNodes()[i];
+			auto dest = request->getGraph()->getNodes()[j];
+
+			for(int f = 0; f < substrate->getN(); f++){
+				auto physNode = substrate->getNodes()[f];
+
+				// if orig can be mapped into this physical node
+				O_[f].setUb(1);
+
+				// if dest can be mapped into this physical node
+				D_[f].setUb(1);
+			}
+
+			pProblem.extract(pModel);
+
+			pObjective.setExpr(edgeObjExpr);
+
+			pProblem.solve();
+
+			cout << "Pricing Solution: " << endl;
+
+			// if cost > lambda
+			//	continue;
+
+			// List of Physical Edges 
+			auto path = std::list<Edge*>();
+
+			for(int i = 0; i < substrate->getN(); i++){
+				for(int j = 0; j < substrate->getN(); j++){
+					if(substrate->getAdj(i, j) != -1){
+						if(pProblem.getIntValue(X_[i][j]) >= 0.999){
+							cout << X_[i][j] << "\t" << pProblem.getIntValue(X_[i][j]) << endl;
+							int physEdgeId = substrate->getAdj(i, j);
+							auto physEdge = substrate->getEdges()[physEdgeId];
+							path.push_back(physEdge);
+						}
+					}
+				}
+			}
+
+			int orig_ = 1, dest_ = 1;
+			for(int i = 0; i < substrate->getN(); i++){
+				if(pProblem.getIntValue(O_[i]) >= 0.999){
+					cout << O_[i] << "\t" << pProblem.getIntValue(O_[i]) << endl;
+					orig_ = i;
+				}
+				
+				if(pProblem.getIntValue(D_[i]) >= 0.999){
+					cout << D_[i] << "\t" << pProblem.getIntValue(D_[i]) << endl;
+					dest_ = i;
+				}
+			}
+
+			for(int i = 0; i < substrate->getN(); i++){
+				for(int j = 0; j < substrate->getN(); j++){
+					if(substrate->getAdj(i, j) != -1){
+						if(pProblem.getIntValue(X_[i][j]) >= 0.999){
+							cout << X_[i][j] << "\t" << pProblem.getIntValue(X_[i][j]) << endl;
+						}
+					}
+				}
+			}
+			
+			auto pathId = paths->addPath(path, orig_, dest_);
+
+			cout << "\n\n\n\n\n" << endl;
+			cout << "New path added:\t" << orig_ << " " << dest_ << "\t" << pathId << endl;
+
+			cout << path.size() << endl;
+
+			cout << "\n\n\n\n\n" << endl;
+
+			auto newVariable = new Variable();
+			newVariable->setLambdaVar(request, edge, pathId);
+
+			newVars->push_back(newVariable);
+			cout << ">>>>>>>>> " << newVars->size() << endl;
+		}
+	}
 
 	pProblem.exportModel("Pricing.lp");
 	cout << "********************************************" << endl;
