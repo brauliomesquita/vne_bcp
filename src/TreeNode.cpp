@@ -223,6 +223,39 @@ void TreeNode::createConstraints()
 		}
 	}
 
+	for(int v = 0; v < requests.size(); v++){
+		for(int k = 0; k < requests[v]->getGraph()->getM(); k++){
+			auto vEdge = requests[v]->getGraph()->getEdges()[k];
+
+			for(int i=0; i < substrate->getN(); i++){
+				auto physNode = substrate->getNodes()[i];
+
+				var->setNodeMapVar(requests[v], vNode, physNode);
+		
+				auto vIt = vars.find(var);
+				auto varIndex = (*vIt)->getIndex();
+				auto yVar = variables_[varIndex];
+
+				IloExpr expr(env);
+				auto constraint_ = new Constraint();
+				constraint_->setInitialNodeConst(requests[v], vEdge, physNode);
+				constraint_->setIndex(constCount++);
+				consts.insert(constraint_);
+
+				constraints_.add(expr - zVar <= 0);
+
+				constraint_ = new Constraint();
+				constraint_->setEndNodeConst(requests[v], vEdge, physNode);
+				constraint_->setIndex(constCount++);
+				consts.insert(constraint_);
+
+				constraints_.add(expr - zVar <= 0);
+
+				expr.end();
+			}
+		}
+	}
+
 	for(auto var = vars.begin(); var != vars.end(); var++){
 		if((*var)->getType() != Variable::VarType::LAMBDA)
 			continue;

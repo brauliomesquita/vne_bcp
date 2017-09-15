@@ -6,6 +6,8 @@
 Constraint::Constraint(){
     this->type = ConstType::UNKNOWN;
 
+    this->virtualEndNode = NULL;
+
     this->lb = -IloInfinity;
     this->ub = IloInfinity;
 
@@ -73,6 +75,22 @@ void Constraint::setPathAssignConst(Request * request, Edge * virtualEdge){
     this->virtualEdge = virtualEdge;
 }
 
+void Constraint::setInitialNodeConst(Request * request, Edge * virtualEdge, Node * physNode){
+    this->type = ConstType::PATH_INITNODE;
+
+    this->request = request;
+    this->virtualEdge = virtualEdge;
+    this->physNode = physNode;
+}
+
+void Constraint::setEndNodeConst(Request * request, Edge * virtualEdge, Node * physNode){
+    this->type = ConstType::PATH_ENDNODE;
+
+    this->request = request;
+    this->virtualEdge = virtualEdge;
+    this->physNode = physNode;
+}
+
 bool Constraint::operator < (const Constraint& other) const
 {
     if(this->type != other.type)
@@ -100,6 +118,22 @@ bool Constraint::operator < (const Constraint& other) const
         if(this->request->getId() != other.request->getId())
             return this->request->getId() < other.request->getId();
        return (this->virtualEdge->getId()) < (other.virtualEdge->getId());
+   }
+
+   if(this->type == ConstType::PATH_INITNODE){
+        if(this->request->getId() != other.request->getId())
+            return this->request->getId() < other.request->getId();
+        if (this->virtualEdge->getId() != other.virtualEdge->getId())
+            return (this->virtualEdge->getId() < other.virtualEdge->getId());
+        return (this->physNode->getId()) < (other.physNode->getId());
+   }
+
+    if(this->type == ConstType::PATH_ENDNODE){
+        if(this->request->getId() != other.request->getId())
+            return this->request->getId() < other.request->getId();
+        if (this->virtualEdge->getId() != other.virtualEdge->getId())
+            return (this->virtualEdge->getId() < other.virtualEdge->getId());
+        return (this->physNode->getId()) < (other.physNode->getId());
    }
 
 }

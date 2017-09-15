@@ -62,6 +62,9 @@ public:
     void setNodeMapConst(Request * request, Node * virtualNode);
     void setPathAssignConst(Request * request, Edge * virtualEdge);
 
+    void setInitialNodeConst(Request * request, Edge * virtualEdge, Node * physNode);
+    void setEndNodeConst(Request * request, Edge * virtualEdge, Node * physNode);
+
     struct ConstraintComp {
         bool operator() (const Constraint* lhs, const Constraint* rhs) const
         {
